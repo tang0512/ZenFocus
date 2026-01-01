@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ZenFocus</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #f8fafc;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overscroll-behavior: none;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .glass-modal {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-up {
+            animation: slideUp 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body>
+<div id="root" class="h-full pt-[env(safe-area-inset-top)] box-border"></div>
+
+<script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- 1. 设置弹窗组件 ---
+    const SettingsModal = ({ isOpen, onClose, onSetTime }) => {
+        const [customMin, setCustomMin] = useState("");
+        if (!isOpen) return null;
+
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 fade-in">
+                <div className="glass-modal w-4/5 max-w-sm rounded-2xl p-6 shadow-2xl transform transition-all scale-100">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-slate-800">⏱️ 设置时长</h3>
+                        <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+                            <i className="ph-bold ph-x text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div className="space-y-3">
+                        <button onClick={() => onSetTime(25)} className="w-full py-3 bg-indigo-50 text-indigo-600 font-medium rounded-xl hover:bg-indigo-100 flex items-center justify-center gap-2">
+                            <i className="ph-fill ph-plant"></i> 番茄专注 (25分钟)
+                        </button>
+                        <button onClick={() => onSetTime(5)} className="w-full py-3 bg-green-50 text-green-600 font-medium rounded-xl hover:bg-green-100 flex items-center justify-center gap-2">
+                            <i className="ph-fill ph-coffee"></i> 小憩一下 (5分钟)
+                        </button>
+                        <div className="pt-2 border-t border-slate-100">
+                            <p className="text-xs text-slate-400 mb-2">自定义时长 (分钟)</p>
+                            <div className="flex gap-2">
+                                <input type="number" value={customMin} onChange={(e) => setCustomMin(e.target.value)} placeholder="例如: 45" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" />
+                                <button onClick={() => customMin && onSetTime(parseInt(customMin))} className="px-4 bg-slate-800 text-white rounded-lg font-medium">确定</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // --- 2. 每日禅语组件 ---
+    const DailyQuote = () => {
+        const [quote, setQuote] = useState({ text: "正在获取智慧...", author: "..." });
+        useEffect(() => {
+            const fetchQuote = async () => {
+                try {
+                    const res = await fetch('https://v1.hitokoto.cn/?c=i&c=k');
+                    const data = await res.json();
+                    setQuote({ text: data.hitokoto, author: data.from });
+                } catch (e) {
+                    setQuote({ text: "专注当下，即是永恒。", author: "Zen" });
+                }
+            };
+            fetchQuote();
+        }, []);
+        return (
+            <div className="mx-6 mt-4 mb-2 p-4 bg-white rounded-2xl shadow-sm border-l-4 border-indigo-500">
+                <p className="text-slate-700 italic font-medium text-sm">"{quote.text}"</p>
+                <p className="text-right text-xs text-slate-400 mt-2 font-bold">— {quote.author}</p>
+            </div>
+        );
+    };
+
+    // --- 3. 主应用 ---
+    const App = () => {
+        const [tasks, setTasks] = useState(() => {
+            try { return JSON.parse(localStorage.getItem('zen_tasks')) || []; } catch(e){ return []; }
+        });
+        const [inputValue, setInputValue] = useState("");
+        const [totalTime, setTotalTime] = useState(25 * 60);
+        const [timeLeft, setTimeLeft] = useState(25 * 60);
+        const [isActive, setIsActive] = useState(false);
+        const [showSettings, setShowSettings] = useState(false);
+        const timerRef = useRef(null);
+
+        useEffect(() => localStorage.setItem('zen_tasks', JSON.stringify(tasks)), [tasks]);
+
+        useEffect(() => {
+            if (isActive && timeLeft > 0) {
+                timerRef.current = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+            } else if (timeLeft === 0) {
+                clearInterval(timerRef.current);
+                setIsActive(false);
+                setTimeLeft(totalTime);
+                alert("专注结束！");
+            }
+            return () => clearInterval(timerRef.current);
+        }, [isActive, timeLeft, totalTime]);
+
+        const handleSetTime = (minutes) => {
+            const seconds = minutes * 60;
+            setTotalTime(seconds);
+            setTimeLeft(seconds);
+            setIsActive(false);
+            setShowSettings(false);
+        };
+
+        const addTask = () => {
+            if (inputValue.trim()) {
+                setTasks([...tasks, { id: Date.now(), text: inputValue, done: false }]);
+                setInputValue("");
+            }
+        };
+
+        const handleKeyPress = (e) => { if (e.key === 'Enter') addTask(); };
+        const toggleTask = (id) => setTasks(tasks.map(t => t.id === id ? { ...t, done: !t.done } : t));
+        const deleteTask = (id) => setTasks(tasks.filter(t => t.id !== id));
+
+        const progress = ((totalTime - timeLeft) / totalTime) * 100;
+        const formatTime = (s) => `${Math.floor(s / 60).toString().padStart(2,'0')}:${(s % 60).toString().padStart(2,'0')}`;
+
+        return (
+            // 恢复最简单的 h-screen 布局，不再需要复杂的视口计算
+            <div className="h-screen flex flex-col bg-slate-50 text-slate-800 w-full overflow-hidden">
+
+                {/* 1. 顶部 Header */}
+                <div className="flex-none flex justify-center items-center px-6 pt-6 pb-2 bg-white shadow-sm z-10 relative">
+                    <h1 className="text-xl font-bold flex items-center gap-2 text-indigo-600">
+                        <img src="ZenFocus.png" className="w-6 h-6 object-contain" alt="Logo" /> ZenFocus
+                    </h1>
+                </div>
+
+                {/* 2. 主滚动区域 */}
+                <div className="flex-1 overflow-y-auto no-scrollbar pb-10">
+                    <DailyQuote />
+
+                    {/* 计时器区域 */}
+                    <div className="flex flex-col items-center justify-center my-6 mt-2">
+                        <div className="relative w-64 h-64 flex items-center justify-center">
+                            <svg className="transform -rotate-90 w-full h-full drop-shadow-xl">
+                                <circle cx="128" cy="128" r="110" stroke="#e2e8f0" strokeWidth="8" fill="white" />
+                                <circle cx="128" cy="128" r="110" stroke="#4f46e5" strokeWidth="8" fill="transparent"
+                                    strokeDasharray={2 * Math.PI * 110}
+                                    strokeDashoffset={2 * Math.PI * 110 * (1 - progress / 100)}
+                                    strokeLinecap="round"
+                                    className="transition-all duration-1000 ease-linear"
+                                />
+                            </svg>
+                            <div className="absolute text-center">
+                                <span className="text-6xl font-mono font-bold text-slate-700 tracking-tighter block">{formatTime(timeLeft)}</span>
+                                <span className="text-sm text-slate-400 font-medium">{isActive ? '专注中...' : '准备就绪'}</span>
+                            </div>
+                        </div>
+
+                        {/* 按钮组 */}
+                        <div className="flex items-center gap-4 mt-4">
+                            <button onClick={() => { setIsActive(false); setTimeLeft(totalTime); }} className="w-12 h-12 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center hover:bg-slate-300 transition-colors">
+                                <i className="ph-bold ph-arrow-counter-clockwise text-xl"></i>
+                            </button>
+                            <button onClick={() => setIsActive(!isActive)} className={`h-14 px-8 rounded-full text-white font-bold shadow-lg shadow-indigo-200 flex items-center gap-2 transition-all active:scale-95 text-lg ${isActive ? 'bg-orange-500' : 'bg-indigo-600'}`}>
+                                <i className={`ph-fill ${isActive ? 'ph-pause' : 'ph-play'} text-xl`}></i>
+                                {isActive ? '暂停' : '开始专注'}
+                            </button>
+                            <button onClick={() => setShowSettings(true)} className="w-12 h-12 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 transition-colors border border-slate-200">
+                                <i className="ph-bold ph-gear text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 🟢 关键修改：输入框移到这里，位于任务列表上方 */}
+                    <div className="px-6 mb-6">
+                         <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border border-indigo-100 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
+                            <div className="text-indigo-400 pl-2"><i className="ph-bold ph-pencil-simple"></i></div>
+                            <input
+                                type="text"
+                                value={inputValue}
+                                onChange={(e) => setInputValue(e.target.value)}
+                                placeholder="添加一个新的专注目标..."
+                                className="flex-1 bg-transparent outline-none text-slate-700 text-sm py-2 placeholder:text-slate-400"
+                                onKeyPress={handleKeyPress}
+                            />
+                            <button
+                                onClick={addTask}
+                                disabled={!inputValue.trim()}
+                                className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center ${inputValue.trim() ? 'bg-indigo-600 text-white active:scale-90' : 'bg-slate-100 text-slate-300'}`}
+                            >
+                                <i className="ph-bold ph-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 任务列表 */}
+                    <div className="px-6 animate-slide-up">
+                        <h3 className="text-slate-800 font-bold mb-3 flex items-center gap-2">
+                            <i className="ph-duotone ph-list-checks text-indigo-500"></i> 待办清单
+                        </h3>
+                        <div className="space-y-2">
+                            {tasks.length === 0 && <div className="text-center py-6 text-slate-300 text-sm border-2 border-dashed border-slate-100 rounded-xl">这里空空如也</div>}
+                            {tasks.map(task => (
+                                <div key={task.id} className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex items-center gap-3 transition-all hover:shadow-md">
+                                    <button onClick={() => toggleTask(task.id)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${task.done ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300'}`}>
+                                        {task.done && <i className="ph-bold ph-check text-white text-[10px]"></i>}
+                                    </button>
+                                    <span className={`flex-1 text-sm ${task.done ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{task.text}</span>
+                                    <button onClick={() => deleteTask(task.id)} className="text-slate-300 hover:text-red-500 p-2"><i className="ph-bold ph-trash"></i></button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} onSetTime={handleSetTime} />
+            </div>
+        );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+</script>
+</body>
+</html>
